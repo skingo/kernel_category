@@ -43,7 +43,7 @@ isFinMonoid n = if n `elem` elems
       hasUnit = all (\m -> mempty `mappend` m == m && m `mappend` mempty == m) elems
       isAssoc = all (\(m,m',m'') -> (m `mappend` m') `mappend` m'' == m `mappend` (m' `mappend` m'')) triples
       isClosed = all (\(m,m') -> m `mappend` m' `DS.member` allElems) pairs
-      
+
 
 class Category cat where
    objects :: cat o a -> DS.Set o
@@ -71,7 +71,7 @@ instance (Show m, Show n) => Show (DerivedCat m n) where
 
 derive :: (FinMonoid m, FinMonoid n) => (m -> DS.Set n) -> DerivedCat m n
 derive phi = DC { obj = obj', arr = a, compose = c }
-   where 
+   where
       a n n' = let   green_rs = DS.toList $ DS.filter (\n'' -> n `mappend` n'' == n') allElems
                      pairs    = concatMap (\n'' -> [ (m,n'') | m <- DS.toList (preimage phi n'') ] ) green_rs
                      preImg   = DS.toList $ preimage phi n
@@ -110,10 +110,20 @@ instance (Show m, Show n) => Show (KernelCat m n) where
 
 kernelize :: (FinMonoid m, FinMonoid n) => (m -> DS.Set n) -> KernelCat m n
 kernelize phi = KC { objK = obj', arrK = a, composeK = c }
-   where 
-      a = undefined
-      c = undefined
-      obj' = undefined
+   where
+      a (nl, nr) (nl', nr') =
+         let   connectors  = DS.toList $ DS.filter (\n -> nl `mappend` n == nl' && nr == n `mappend` nr') allElems
+               pairs       = concatMap (\n' -> [ (m,n') | m <- DS.toList (preimage phi n') ] ) connectors
+               preImgL     = DS.toList $ preimage phi nl
+               preImgR     = DS.toList $ preimage phi nr'
+               prePairs    = [ (ml, mr) | ml <- preImgL, mr <- preImgR ]
+               inducedFct  = fmap (\p -> (p, fmap (\(ml,mr) -> ml `mappend` fst p `mappend` mr) prePairs)) pairs
+               classify [] (p, img) = [(DS.singleton p, img)]
+               classify ((ps, img'):cs) (p, img)
+                  | img == img'  = (p `DS.insert` ps, img):cs
+                  | otherwise    = (ps, img'):classify cs (p, img)
+               classes  = foldl classify [] inducedFct
+         in DS.fromList $ fmap fst classes
       --  a n n' = let   green_rs = DS.toList $ DS.filter (\n'' -> n `mappend` n'' == n') allElems
                      --  pairs    = concatMap (\n'' -> [ (m,n'') | m <- DS.toList (preimage phi n'') ] ) green_rs
                      --  preImg   = DS.toList $ preimage phi n
@@ -124,20 +134,21 @@ kernelize phi = KC { objK = obj', arrK = a, composeK = c }
                         --  | otherwise    = (ps, img'):classify cs (p, img)
                      --  classes  = foldl classify [] inducedFct
                --  in DS.fromList $ fmap fst classes
-      --  obj'  = image phi
-      --  c sr m el l r  =  let   prod     = unPairwise $ Pairwise r `mappend` Pairwise l
-                              --  arrs     = DS.toList $ a sr el
-                              --  cands    = filter (prod `DS.isSubsetOf`) arrs
-                              --  lValid   = l `elem` a m el
-                              --  rValid   = r `elem` a sr m
-                        --  in case (lValid, rValid) of
-                           --  (False, False) -> error "both arrows are invalid"
-                           --  (True,  False) -> error "left arrow is invalid"
-                           --  (False, True ) -> error "right arrow is invalid"
-                           --  (True,  True ) ->  case cands of
-                              --  []  -> error "no product found"
-                              --  [x] -> x
-                              --  _   -> error "too many products possible"
+      img  = DS.toList $ image phi
+      obj' = DS.fromList [ (n,n') | n <- img, n' <- img ]
+      c sr m el l r  =  let   prod     = unPairwise $ Pairwise r `mappend` Pairwise l
+                              arrs     = DS.toList $ a sr el
+                              cands    = filter (prod `DS.isSubsetOf`) arrs
+                              lValid   = l `elem` a m el
+                              rValid   = r `elem` a sr m
+                        in case (lValid, rValid) of
+                           (False, False) -> error "both arrows are invalid"
+                           (True,  False) -> error "left arrow is invalid"
+                           (False, True ) -> error "right arrow is invalid"
+                           (True,  True ) ->  case cands of
+                              []  -> error "no product found"
+                              [x] -> x
+                              _   -> error "too many products possible"
 
 
 
