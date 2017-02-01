@@ -15,8 +15,12 @@ cabal-version:       >=1.10
 
 library
   hs-source-dirs:      src
-  exposed-modules:     KernelCategory
+  exposed-modules:     KernelCategory, DrawCat, ParseMonoid
   build-depends:       base >= 4.7 && < 5, containers
+                     , graphviz
+                     , fgl
+                     , text
+                     , parsec
   default-language:    Haskell2010
 
 executable kernelCategory-exe

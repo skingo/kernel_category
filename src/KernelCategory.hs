@@ -196,7 +196,7 @@ instance Show Trunc where
    show (Trunc n) = show n ++ "_T"
 
 truncationLevel :: Int
-truncationLevel = 5
+truncationLevel = 3
 
 instance Monoid Trunc where
    mempty = Trunc 0
@@ -210,6 +210,10 @@ simpleMorph U0 = DS.fromList [ Z0, Z1 ]
 simpleMorph U1 = DS.singleton Z0
 
 truncMorph :: Z2 -> DS.Set Trunc
-truncMorph Z0 = DS.fromList $ fmap Trunc [0,2,4,5]
-truncMorph Z1 = DS.fromList $ fmap Trunc [1,3,5]
+truncMorph Z0 = DS.fromList $ fmap Trunc [0,2,3]
+truncMorph Z1 = DS.fromList $ fmap Trunc [1,3]
+
+--  truncMorph :: Z2 -> DS.Set Trunc
+--  truncMorph Z0 = DS.fromList $ fmap Trunc [0,2,4,5]
+--  truncMorph Z1 = DS.fromList $ fmap Trunc [1,3,5]
 
