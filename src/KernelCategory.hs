@@ -45,6 +45,7 @@ isFinMonoid n = if n `elem` elems
       isClosed = all (\(m,m') -> m `mappend` m' `DS.member` allElems) pairs
 
 
+-- maybe use functional dependencies here?
 class Category cat where
    objects :: cat o a -> DS.Set o
    arrows  :: cat o a -> o -> o -> DS.Set a
@@ -61,16 +62,16 @@ preimage :: (FinMonoid m, FinMonoid n) => (m -> DS.Set n) -> n -> DS.Set m
 preimage phi n = DS.filter (\m -> n `DS.member` phi m) allElems
 
 data DerivedCat m n where
-   DC :: { obj :: DS.Set n , arr :: n -> n -> DS.Set (DS.Set (m,n)), compose :: n -> n -> n -> DS.Set (m,n) -> DS.Set (m,n) -> DS.Set (m,n) } -> DerivedCat m n
+   DC :: { objD :: DS.Set n , arrD :: n -> n -> DS.Set (DS.Set (m,n)), composeD :: n -> n -> n -> DS.Set (m,n) -> DS.Set (m,n) -> DS.Set (m,n), idD :: n -> DS.Set (m,n) } -> DerivedCat m n
 
 instance (Show m, Show n) => Show (DerivedCat m n) where
-   show dc = let  objs     = DS.toList $ obj dc
-                  arrs     = fmap (\(n,n') -> ((n, n'), arr dc n n')) [ (n, n') | n <- objs, n' <- objs ]
+   show dc = let  objs     = DS.toList $ objD dc
+                  arrs     = fmap (\(n,n') -> ((n, n'), arrD dc n n')) [ (n, n') | n <- objs, n' <- objs ]
                   arrList  = fmap (\((n, n'), as) -> "\t" ++ show n ++ ", " ++ show n' ++ ":\t" ++ intercalate "\n\t\t\t" (fmap (show . DS.toList) (DS.toList as))) arrs
              in "Objects:\n\t" ++ show objs ++ "\nArrows:\n" ++ unlines arrList
 
 derive :: (FinMonoid m, FinMonoid n) => (m -> DS.Set n) -> DerivedCat m n
-derive phi = DC { obj = obj', arr = a, compose = c }
+derive phi = DC { objD = obj', arrD = a, composeD = c, idD = id' }
    where
       a n n' = let   green_rs = DS.toList $ DS.filter (\n'' -> n `mappend` n'' == n') allElems
                      pairs    = concatMap (\n'' -> [ (m,n'') | m <- DS.toList (preimage phi n'') ] ) green_rs
@@ -83,24 +84,48 @@ derive phi = DC { obj = obj', arr = a, compose = c }
                      classes  = foldl classify [] inducedFct
                in DS.fromList $ fmap fst classes
       obj'  = image phi
-      c sr m el l r  =  let   prod     = unPairwise $ Pairwise r `mappend` Pairwise l
-                              arrs     = DS.toList $ a sr el
-                              cands    = filter (prod `DS.isSubsetOf`) arrs
-                              lValid   = l `elem` a m el
-                              rValid   = r `elem` a sr m
-                        in case (lValid, rValid) of
-                           (False, False) -> error "both arrows are invalid"
-                           (True,  False) -> error "left arrow is invalid"
-                           (False, True ) -> error "right arrow is invalid"
-                           (True,  True ) ->  case cands of
-                              []  -> error "no product found"
-                              [x] -> x
-                              _   -> error "too many products possible"
+      id' n = getId $ a n n
+      c     = compose a
 
+instance Category DerivedCat where
+   objects = objD
+   arrows  = arrD
+   id      = idD
+   comp    = composeD
+
+
+compose :: (FinMonoid m, FinMonoid n) => (o -> o -> DS.Set (DS.Set (m,n))) -> o -> o -> o -> DS.Set (m,n) -> DS.Set (m,n) -> DS.Set (m,n)
+compose a sr m el l r =
+         let   prod     = unPairwise $ Pairwise r `mappend` Pairwise l
+               arrs     = DS.toList $ a sr el
+               cands    = filter (prod `DS.isSubsetOf`) arrs
+               lValid   = l `elem` a m el
+               rValid   = r `elem` a sr m
+         in case (lValid, rValid) of
+            (False, False) -> error "both arrows are invalid"
+            (True,  False) -> error "left arrow is invalid"
+            (False, True ) -> error "right arrow is invalid"
+            (True,  True ) ->  case cands of
+               []  -> error "no product found"
+               [x] -> x
+               _   -> error "too many products possible"
+
+
+getId :: (FinMonoid n) => DS.Set (DS.Set (m,n)) -> DS.Set (m,n)
+getId arrs = let cands          = DS.filter containsEmpty arrs
+                 containsEmpty  = not . DS.null . DS.filter ((== mempty) . snd)
+             in if DS.null cands
+                then 
+                    error "no identity element found"
+                else if DS.size cands > 1
+                then
+                    error "too many identity elements found"
+                else
+                    DS.findMin cands
 
 
 data KernelCat m n where
-   KC :: { objK :: DS.Set (n,n) , arrK :: (n,n) -> (n,n) -> DS.Set (DS.Set (m,n)), composeK :: (n,n) -> (n,n) -> (n,n) -> DS.Set (m,n) -> DS.Set (m,n) -> DS.Set (m,n) } -> KernelCat m n
+   KC :: { objK :: DS.Set (n,n) , arrK :: (n,n) -> (n,n) -> DS.Set (DS.Set (m,n)), composeK :: (n,n) -> (n,n) -> (n,n) -> DS.Set (m,n) -> DS.Set (m,n) -> DS.Set (m,n), idK :: (n,n) -> DS.Set (m,n) } -> KernelCat m n
 
 instance (Show m, Show n) => Show (KernelCat m n) where
    show kc = let  objs     = DS.toList $ objK kc
@@ -109,7 +134,7 @@ instance (Show m, Show n) => Show (KernelCat m n) where
              in "Objects:\n\t" ++ show objs ++ "\nArrows:\n" ++ unlines arrList
 
 kernelize :: (FinMonoid m, FinMonoid n) => (m -> DS.Set n) -> KernelCat m n
-kernelize phi = KC { objK = obj', arrK = a, composeK = c }
+kernelize phi = KC { objK = obj', arrK = a, composeK = c, idK = id' }
    where
       a (nl, nr) (nl', nr') =
          let   connectors  = DS.toList $ DS.filter (\n -> nl `mappend` n == nl' && nr == n `mappend` nr') allElems
@@ -124,31 +149,10 @@ kernelize phi = KC { objK = obj', arrK = a, composeK = c }
                   | otherwise    = (ps, img'):classify cs (p, img)
                classes  = foldl classify [] inducedFct
          in DS.fromList $ fmap fst classes
-      --  a n n' = let   green_rs = DS.toList $ DS.filter (\n'' -> n `mappend` n'' == n') allElems
-                     --  pairs    = concatMap (\n'' -> [ (m,n'') | m <- DS.toList (preimage phi n'') ] ) green_rs
-                     --  preImg   = DS.toList $ preimage phi n
-                     --  inducedFct  = fmap (\p -> (p, fmap (\m -> m `mappend` fst p) preImg)) pairs
-                     --  classify [] (p, img) = [(DS.singleton p, img)]
-                     --  classify ((ps, img'):cs) (p, img)
-                        --  | img == img'  = (p `DS.insert` ps, img):cs
-                        --  | otherwise    = (ps, img'):classify cs (p, img)
-                     --  classes  = foldl classify [] inducedFct
-               --  in DS.fromList $ fmap fst classes
-      img  = DS.toList $ image phi
-      obj' = DS.fromList [ (n,n') | n <- img, n' <- img ]
-      c sr m el l r  =  let   prod     = unPairwise $ Pairwise r `mappend` Pairwise l
-                              arrs     = DS.toList $ a sr el
-                              cands    = filter (prod `DS.isSubsetOf`) arrs
-                              lValid   = l `elem` a m el
-                              rValid   = r `elem` a sr m
-                        in case (lValid, rValid) of
-                           (False, False) -> error "both arrows are invalid"
-                           (True,  False) -> error "left arrow is invalid"
-                           (False, True ) -> error "right arrow is invalid"
-                           (True,  True ) ->  case cands of
-                              []  -> error "no product found"
-                              [x] -> x
-                              _   -> error "too many products possible"
+      img   = DS.toList $ image phi
+      obj'  = DS.fromList [ (n,n') | n <- img, n' <- img ]
+      id' n = getId $ a n n
+      c     = compose a
 
 
 
